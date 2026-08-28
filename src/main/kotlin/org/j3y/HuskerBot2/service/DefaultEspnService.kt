@@ -8,6 +8,10 @@ import org.j3y.HuskerBot2.util.SeasonResolver
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.CacheEvict
 import org.springframework.cache.annotation.Cacheable
+import org.springframework.http.client.ClientHttpRequestExecution
+import org.springframework.http.client.ClientHttpRequestInterceptor
+import org.springframework.http.client.ClientHttpResponse
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
@@ -19,9 +23,49 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+/**
+ * Adds headers to outgoing requests to mimic a Chrome browser, since ESPN
+ * will return a 403 for requests that look like they're coming from a bot/script.
+ */
+class ChromeBrowserHeadersInterceptor : ClientHttpRequestInterceptor {
+    override fun intercept(
+        request: org.springframework.http.HttpRequest,
+        body: ByteArray,
+        execution: ClientHttpRequestExecution
+    ): ClientHttpResponse {
+        val headers = request.headers
+        headers.set(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        )
+        headers.set(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        )
+        headers.set("Accept-Language", "en-US,en;q=0.9")
+        headers.set("Accept-Encoding", "gzip, deflate, br, zstd")
+        headers.set("Cache-Control", "no-cache")
+        headers.set("Pragma", "no-cache")
+        headers.set("Connection", "keep-alive")
+        headers.set("Referer", "https://www.espn.com/")
+        headers.set("Origin", "https://www.espn.com")
+        headers.set("Sec-Ch-Ua", "\"Chromium\";v=\"128\", \"Google Chrome\";v=\"128\", \"Not-A.Brand\";v=\"99\"")
+        headers.set("Sec-Ch-Ua-Mobile", "?0")
+        headers.set("Sec-Ch-Ua-Platform", "\"Windows\"")
+        headers.set("Sec-Fetch-Dest", "empty")
+        headers.set("Sec-Fetch-Mode", "cors")
+        headers.set("Sec-Fetch-Site", "same-site")
+        headers.set("Upgrade-Insecure-Requests", "1")
+        return execution.execute(request, body)
+    }
+}
+
 @Service
 class DefaultEspnService(
-    private val client: RestTemplate = RestTemplate()
+    private val client: RestTemplate = RestTemplate(HttpComponentsClientHttpRequestFactory()).apply {
+        interceptors.add(ChromeBrowserHeadersInterceptor())
+    }
 ) : EspnService {
 
     private final val log = LoggerFactory.getLogger(DefaultEspnService::class.java)
